@@ -21,6 +21,9 @@ fi
 if [[ "${target}" == *-mingw* ]]; then
     # Apply Windows patch
     atomic_patch -p1 ${WORKSPACE}/srcdir/patches/windows-fixes.patch
+
+    # Remove -z,origin linker option which is not supported by MinGW on Windows
+    sed -i 's/-Wl,-z,origin//g' CMakeLists.txt
 fi
 
 mkdir build && cd build
@@ -50,12 +53,12 @@ fi
 if [[ "${target}" == *-mingw* ]]; then
     # Build linker flags for console executables and shared libs
     # Allow multiple definitions to handle EXTRACTOR object library being linked into both osrm_extract and osrm_guidance
-    EXE_LINKER_FLAGS="-fno-lto -Wl,-subsystem,console -Wl,--entry=mainCRTStartup"
-    SHARED_LINKER_FLAGS="-fno-lto -Wl,--allow-multiple-definition"
+    EXE_LINKER_FLAGS="-fno-lto -Wl,-subsystem,console -Wl,--entry=mainCRTStartup -L${libdir}"
+    SHARED_LINKER_FLAGS="-fno-lto -Wl,--allow-multiple-definition -L${libdir}"
 
     CMAKE_FLAGS+=(
         -DENABLE_LTO=OFF
-        -DCMAKE_CXX_FLAGS="-Wno-array-bounds -Wno-uninitialized -fno-lto -Wno-error -Wno-pedantic"
+        -DCMAKE_CXX_FLAGS="-Wno-array-bounds -Wno-uninitialized -Wno-unused-parameter -Wno-maybe-uninitialized -fno-lto -Wno-error -Wno-pedantic"
         -DCMAKE_C_FLAGS="-Wno-error -Wno-pedantic"
         -DCMAKE_EXE_LINKER_FLAGS="${EXE_LINKER_FLAGS}"
         -DCMAKE_SHARED_LINKER_FLAGS="${SHARED_LINKER_FLAGS}"
@@ -63,20 +66,6 @@ if [[ "${target}" == *-mingw* ]]; then
         -DOSRM_HAS_STD_FORMAT_EXITCODE=0
         -DOSRM_HAS_STD_FORMAT_EXITCODE__TRYRUN_OUTPUT=""
     )
-    # Help CMake find Boost's config package, which currently ships in a nested directory
-    if [ -d "${libdir}/cmake/Boost-1.87.0" ]; then
-        CMAKE_FLAGS+=(-DBoost_DIR=${libdir}/cmake/Boost-1.87.0/)
-    elif [ -d "${prefix}/lib/cmake/Boost-1.87.0" ]; then
-        CMAKE_FLAGS+=(-DBoost_DIR=${prefix}/lib/cmake/Boost-1.87.0/)
-    fi
-    # Help CMake find Lua library on Windows
-    LUA_LIB=$(find "${libdir}" "${prefix}/lib" "${bindir}" "${prefix}/bin" \( -name "lua*.dll.a" -o -name "liblua*.a" \) 2>/dev/null | head -1)
-    if [ -n "$LUA_LIB" ] && [ -f "$LUA_LIB" ]; then
-        CMAKE_FLAGS+=(-DLUA_LIBRARIES="${LUA_LIB}")
-    else
-        CMAKE_FLAGS+=(-DLUA_LIBRARIES="lua54")
-    fi
-    CMAKE_FLAGS+=(-DLUA_INCLUDE_DIR="${includedir}")
 fi
 
 cmake .. "${CMAKE_FLAGS[@]}"
