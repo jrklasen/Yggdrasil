@@ -21,9 +21,6 @@ fi
 if [[ "${target}" == *-mingw* ]]; then
     # Apply Windows patch
     atomic_patch -p1 ${WORKSPACE}/srcdir/patches/windows-fixes.patch
-
-    # Remove -z,origin linker option which is not supported by MinGW on Windows
-    sed -i 's/-Wl,-z,origin//g' CMakeLists.txt
 fi
 
 mkdir build && cd build
@@ -58,7 +55,7 @@ if [[ "${target}" == *-mingw* ]]; then
 
     CMAKE_FLAGS+=(
         -DENABLE_LTO=OFF
-        -DCMAKE_CXX_FLAGS="-Wno-array-bounds -Wno-uninitialized -Wno-unused-parameter -Wno-maybe-uninitialized -fno-lto -Wno-error -Wno-pedantic"
+        -DCMAKE_CXX_FLAGS="-Wno-array-bounds -Wno-uninitialized -fno-lto -Wno-error -Wno-pedantic"
         -DCMAKE_C_FLAGS="-Wno-error -Wno-pedantic"
         -DCMAKE_EXE_LINKER_FLAGS="${EXE_LINKER_FLAGS}"
         -DCMAKE_SHARED_LINKER_FLAGS="${SHARED_LINKER_FLAGS}"
