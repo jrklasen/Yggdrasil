@@ -1,39 +1,10 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -181,5 +181,36 @@ add_library(osrm_contract src/osrm/contractor.cpp $<TARGET_OBJECTS:CONTRACTOR> $<TARGET_OBJECTS:UTIL>)
+@@ -181,5 +181,11 @@ add_library(osrm_contract src/osrm/contractor.cpp $<TARGET_OBJECTS:CONTRACTOR> $<TARGET_OBJECTS:UTIL>)
  add_library(osrm_extract src/osrm/extractor.cpp $<TARGET_OBJECTS:EXTRACTOR> $<TARGET_OBJECTS:MICROTAR> $<TARGET_OBJECTS:UTIL>)
 -add_library(osrm_guidance $<TARGET_OBJECTS:GUIDANCE> $<TARGET_OBJECTS:UTIL>)
 +add_library(osrm_guidance $<TARGET_OBJECTS:GUIDANCE> $<TARGET_OBJECTS:UTIL> $<TARGET_OBJECTS:MICROTAR>)
 +target_link_libraries(osrm_guidance PRIVATE EXTRACTOR ${LUA_LIBRARIES})
-+if(TARGET BZip2::BZip2)
-+    target_link_libraries(osrm_guidance PRIVATE BZip2::BZip2)
-+else()
-+    target_link_libraries(osrm_guidance PRIVATE bz2)
-+endif()
-+if(TARGET EXPAT::EXPAT)
-+    target_link_libraries(osrm_guidance PRIVATE EXPAT::EXPAT)
-+else()
-+    target_link_libraries(osrm_guidance PRIVATE expat)
-+endif()
-+if(TARGET Boost::iostreams)
-+    target_link_libraries(osrm_guidance PRIVATE Boost::iostreams)
-+elseif(Boost_IOSTREAMS_LIBRARIES)
-+    target_link_libraries(osrm_guidance PRIVATE ${Boost_IOSTREAMS_LIBRARIES})
-+elseif(Boost_iostreams_FOUND)
-+    target_link_libraries(osrm_guidance PRIVATE ${Boost_iostreams_LIBRARIES})
-+else()
-+    # Fallback: try to find and link the library directly
-+    find_library(BOOST_IOSTREAMS_LIB
-+        NAMES boost_iostreams libboost_iostreams
-+        PATHS ${CMAKE_PREFIX_PATH}/lib ${CMAKE_INSTALL_PREFIX}/lib
-+        NO_DEFAULT_PATH
-+    )
-+    if(BOOST_IOSTREAMS_LIB)
-+        target_link_libraries(osrm_guidance PRIVATE ${BOOST_IOSTREAMS_LIB})
-+    else()
-+        # Last resort: link by name
-+        target_link_libraries(osrm_guidance PRIVATE boost_iostreams)
-+    endif()
-+endif()
++target_link_libraries(osrm_guidance PRIVATE BZip2::BZip2 EXPAT::EXPAT Boost::iostreams)
  add_library(osrm_partition src/osrm/partitioner.cpp $<TARGET_OBJECTS:PARTITIONER> $<TARGET_OBJECTS:MICROTAR> $<TARGET_OBJECTS:UTIL>)
  add_library(osrm_customize src/osrm/customizer.cpp $<TARGET_OBJECTS:CUSTOMIZER> $<TARGET_OBJECTS:MICROTAR> $<TARGET_OBJECTS:UTIL>)

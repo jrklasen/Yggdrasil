@@ -63,6 +63,19 @@ if [[ "${target}" == *-mingw* ]]; then
         -DOSRM_HAS_STD_FORMAT_EXITCODE=0
         -DOSRM_HAS_STD_FORMAT_EXITCODE__TRYRUN_OUTPUT=""
     )
+    # Help CMake find Boost's config package, which currently ships in a nested directory
+    BOOST_DIR=$(find "${prefix}" -type d -name "Boost-1.87.0" -path "*/cmake/*" 2>/dev/null | head -1)
+    if [ -n "$BOOST_DIR" ] && [ -d "$BOOST_DIR" ]; then
+        CMAKE_FLAGS+=(-DBoost_DIR=${BOOST_DIR})
+    fi
+    # Help CMake find Lua library on Windows
+    LUA_LIB=$(find "${libdir}" "${prefix}/lib" "${bindir}" "${prefix}/bin" \( -name "lua*.dll.a" -o -name "liblua*.a" \) 2>/dev/null | head -1)
+    if [ -n "$LUA_LIB" ] && [ -f "$LUA_LIB" ]; then
+        CMAKE_FLAGS+=(-DLUA_LIBRARIES="${LUA_LIB}")
+    else
+        CMAKE_FLAGS+=(-DLUA_LIBRARIES="lua54")
+    fi
+    CMAKE_FLAGS+=(-DLUA_INCLUDE_DIR="${includedir}")
 fi
 
 cmake .. "${CMAKE_FLAGS[@]}"
