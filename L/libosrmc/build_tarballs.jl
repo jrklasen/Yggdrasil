@@ -4,7 +4,7 @@ name = "libosrmc"
 version = v"6.0.0"
 
 sources = [
-    DirectorySource("/home/jrklasen/dev/moviro/libosrmc"),
+    DirectorySource("/home/jrklasen/dev/moviro/osrm/libosrmc"),
     ArchiveSource(
         "https://github.com/roblabla/MacOSX-SDKs/releases/download/13.3/MacOSX13.3.sdk.tar.xz",
         "e5d0f958a079106234b3a840f93653308a76d3dcea02d3aa8f2841f8df33050c",
@@ -20,7 +20,9 @@ export CPPFLAGS="-I${prefix}/include ${CPPFLAGS}"
 if [[ "${target}" == *-mingw* ]]; then
     export CPPFLAGS="-I${prefix}/include/osrm ${CPPFLAGS}"
 fi
-export LDFLAGS="-L${prefix}/lib -Wl,-rpath,${prefix}/lib ${LDFLAGS}"
+export LDFLAGS="-L${prefix}/lib -Wl,-rpath,\$ORIGIN -Wl,--as-needed -Wl,--no-default-libpath ${LDFLAGS}"
+export LIBRARY_PATH="${prefix}/lib"
+unset LD_LIBRARY_PATH || true
 
 if [[ -n "${LD_LIBRARY_PATH}" ]]; then
     export LD_LIBRARY_PATH=$(echo "${LD_LIBRARY_PATH}" | tr ':' '\n' | grep -v "destdir" | tr '\n' ':' | sed 's/:$//; s/^://')
@@ -57,7 +59,7 @@ products = [
 dependencies = [
     Dependency("CompilerSupportLibraries_jll"),
     Dependency(PackageSpec(name="OSRM_jll", url="https://github.com/jrklasen/OSRM_jll.jl", rev="main")),
-    Dependency("boost_jll"),
+    Dependency("boost_jll"; compat="=1.87.0"),  # Must match OSRM_jll's boost version
     Dependency("Expat_jll"; compat="2.6.5"),
     Dependency("Zlib_jll"),
     Dependency("Bzip2_jll"),
