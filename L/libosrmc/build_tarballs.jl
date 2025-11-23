@@ -15,36 +15,27 @@ script = raw"""
 cd ${WORKSPACE}/srcdir
 [[ -d "libosrmc/libosrmc" ]] && cd libosrmc/libosrmc || cd libosrmc
 
-export PKG_CONFIG_PATH="${prefix}/lib/pkgconfig:${prefix}/share/pkgconfig:${PKG_CONFIG_PATH}"
-export CPPFLAGS="-I${prefix}/include ${CPPFLAGS}"
-if [[ "${target}" == *-mingw* ]]; then
-    export CPPFLAGS="-I${prefix}/include/osrm ${CPPFLAGS}"
-fi
-export LDFLAGS="-L${prefix}/lib -Wl,-rpath,\$ORIGIN -Wl,--as-needed -Wl,--no-default-libpath ${LDFLAGS}"
-export LIBRARY_PATH="${prefix}/lib"
-unset LD_LIBRARY_PATH || true
+# Set PKG_CONFIG_PATH for OSRM discovery
+export PKG_CONFIG_PATH="${prefix}/lib/pkgconfig:${PKG_CONFIG_PATH}"
 
-if [[ -n "${LD_LIBRARY_PATH}" ]]; then
-    export LD_LIBRARY_PATH=$(echo "${LD_LIBRARY_PATH}" | tr ':' '\n' | grep -v "destdir" | tr '\n' ':' | sed 's/:$//; s/^://')
-fi
-
+# macOS-specific setup
 if [[ "${target}" == *-apple-* ]]; then
+    export MACOSX_DEPLOYMENT_TARGET=11.0
+    export EXTRA_CXXFLAGS="-mmacosx-version-min=11.0"
+
+    # Extract SDK for x86_64 macOS if available
     if [[ "${target}" == x86_64-apple-darwin* ]]; then
-        export MACOSX_DEPLOYMENT_TARGET=11.0
-        export EXTRA_CXXFLAGS="-mmacosx-version-min=11.0"
         SDK_TAR=$(find ${WORKSPACE}/srcdir -name "MacOSX*.sdk.tar.xz" | head -1)
-        [[ -f "${SDK_TAR}" ]] && tar --extract --file="${SDK_TAR}" --directory=/opt/${target}/${target}/sys-root/. --strip-components=1 MacOSX13.3.sdk/System MacOSX13.3.sdk/usr 2>/dev/null || true
-    else
-        export MACOSX_DEPLOYMENT_TARGET=11.0
-        export EXTRA_CXXFLAGS="-mmacosx-version-min=11.0"
+        [[ -f "${SDK_TAR}" ]] && tar --extract --file="${SDK_TAR}" \
+            --directory=/opt/${target}/${target}/sys-root/. \
+            --strip-components=1 MacOSX13.3.sdk/System MacOSX13.3.sdk/usr 2>/dev/null || true
     fi
-else
-    export EXTRA_CXXFLAGS=""
 fi
 
+# Build using Makefile
 make clean
-make -j${nproc} PREFIX=${prefix} VERSION_MAJOR=6 VERSION_MINOR=0 EXTRA_CXXFLAGS="${EXTRA_CXXFLAGS}"
-make install PREFIX=${prefix} VERSION_MAJOR=6 VERSION_MINOR=0
+make -j${nproc} PREFIX=${prefix}
+make install PREFIX=${prefix}
 """
 
 platforms = supported_platforms()
@@ -59,7 +50,7 @@ products = [
 dependencies = [
     Dependency("CompilerSupportLibraries_jll"),
     Dependency(PackageSpec(name="OSRM_jll", url="https://github.com/jrklasen/OSRM_jll.jl", rev="main")),
-    Dependency("boost_jll"; compat="=1.87.0"),  # Must match OSRM_jll's boost version
+    Dependency("boost_jll"; compat="=1.87.0"),
     Dependency("Expat_jll"; compat="2.6.5"),
     Dependency("Zlib_jll"),
     Dependency("Bzip2_jll"),
