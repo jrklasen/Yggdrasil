@@ -2,60 +2,20 @@
 # `julia build_tarballs.jl --help` to see a usage message.
 using BinaryBuilder, Pkg
 
+include(joinpath("..", "..", "platforms", "macos_sdks.jl"))
+const SDK_VERSION = "14.5"
+
 name = "OSRM"
 version = v"6.0.0"
 
 # Collection of sources required to complete build
 sources = [
     GitSource("https://github.com/Project-OSRM/osrm-backend.git", "01605f7589e6fe68df3fc690ad001b687128aba7"),
-    DirectorySource("./bundled"),
-    # OSRM requires C++20, which needs a newer SDK with full ranges support
-    ArchiveSource("https://github.com/roblabla/MacOSX-SDKs/releases/download/13.3/MacOSX13.3.sdk.tar.xz",
-        "e5d0f958a079106234b3a840f93653308a76d3dcea02d3aa8f2841f8df33050c"),
+    get_macos_sdk_sources(SDK_VERSION)...
 ]
 
 script = raw"""
 cd ${WORKSPACE}/srcdir/osrm-backend
-
-# Apple specific patches
-if [[ "${target}" == *-apple-darwin* ]]; then
-    # Use a newer SDK which supports C++20 ranges
-    apple_sdk_root=$WORKSPACE/srcdir/MacOSX13.3.sdk
-    sed -i "s!/opt/$target/$target/sys-root!$apple_sdk_root!" $CMAKE_TARGET_TOOLCHAIN
-    sed -i "s!/opt/$target/$target/sys-root!$apple_sdk_root!" /opt/bin/$bb_full_target/$target-clang++
-    export MACOSX_DEPLOYMENT_TARGET=13.3
-    # Exclude duplicate intersection files from GUIDANCE for platforms that link to EXTRACTOR
-    sed -i 's|file(GLOB GuidanceGlob src/guidance/\*\.cpp src/extractor/intersection/\*\.cpp)|file(GLOB GuidanceGlob src/guidance/*.cpp)|' CMakeLists.txt
-    # Replace the osrm_guidance library definition with version that links to EXTRACTOR
-    sed -i '/^add_library(osrm_guidance $<TARGET_OBJECTS:GUIDANCE> $<TARGET_OBJECTS:UTIL>)$/c\
-add_library(osrm_guidance $<TARGET_OBJECTS:GUIDANCE> $<TARGET_OBJECTS:UTIL> $<TARGET_OBJECTS:MICROTAR>)\
-target_link_libraries(osrm_guidance PRIVATE EXTRACTOR ${LUA_LIBRARIES} BZip2::BZip2 ZLIB::ZLIB EXPAT::EXPAT Boost::iostreams TBB::tbb)' CMakeLists.txt
-fi
-
-# Windows specific patches
-if [[ "${target}" == *-mingw* ]]; then
-    # Ensure console executables by stripping WIN32 from add_executable invocations
-    find . -name "CMakeLists.txt" -o -name "*.cmake" | while read f; do
-        sed -i '/add_executable(/,/)/{s/ WIN32//g;}' "$f"
-        sed -i 's/add_executable(\([^ ]*\) WIN32 /add_executable(\1 /g' "$f"
-        sed -i 's/add_executable(\([^ ]*\) WIN32)/add_executable(\1)/g' "$f"
-    done
-    # Exclude duplicate intersection files from GUIDANCE for platforms that link to EXTRACTOR
-    sed -i 's|file(GLOB GuidanceGlob src/guidance/\*\.cpp src/extractor/intersection/\*\.cpp)|file(GLOB GuidanceGlob src/guidance/*.cpp)|' CMakeLists.txt
-    # Remove rpath flag for Windows (not supported)
-    sed -i '/set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,origin")/d' CMakeLists.txt
-    # Replace the osrm_guidance library definition with version that links to EXTRACTOR
-    sed -i '/^add_library(osrm_guidance $<TARGET_OBJECTS:GUIDANCE> $<TARGET_OBJECTS:UTIL>)$/c\
-add_library(osrm_guidance $<TARGET_OBJECTS:GUIDANCE> $<TARGET_OBJECTS:UTIL> $<TARGET_OBJECTS:MICROTAR>)\
-target_link_libraries(osrm_guidance PRIVATE EXTRACTOR ${LUA_LIBRARIES} BZip2::BZip2 ZLIB::ZLIB EXPAT::EXPAT Boost::iostreams TBB::tbb)' CMakeLists.txt
-fi
-
-# Linux-musl specific patches
-if [[ "${target}" == *-linux-musl* ]]; then
-    sed -i 's/-Wpedantic/-Wno-pedantic/g; s/-Werror=pedantic/-Wno-error=pedantic/g' CMakeLists.txt
-fi
-
-mkdir build && cd build
 
 # Common cmake flags
 CMAKE_FLAGS=(
@@ -68,8 +28,43 @@ CMAKE_FLAGS=(
     -DBUILD_TESTING=OFF
 )
 
-# Apple specific cmake flags
+# Linux specific handling
+if [[ "${target}" == *-linux-* ]]; then
+    ### CMake flags
+    CMAKE_FLAGS+=(-DCMAKE_CXX_FLAGS="-Wno-array-bounds -Wno-uninitialized -Wno-error")
+
+    if [[ "${target}" == *-linux-musl* ]]; then
+        ### OSRM-backend Patching
+        sed -i 's/-Wpedantic/-Wno-pedantic/g; s/-Werror=pedantic/-Wno-error=pedantic/g' CMakeLists.txt
+
+        ### CMake flags
+        CMAKE_FLAGS+=(
+            -DOSRM_HAS_STD_FORMAT_EXITCODE=0
+            -DOSRM_HAS_STD_FORMAT_EXITCODE__TRYRUN_OUTPUT=""
+        )
+    fi
+fi
+
+# Apple specific handling
 if [[ "${target}" == *-apple-darwin* ]]; then
+    ### SDK extraction
+    apple_sdk_root=$WORKSPACE/srcdir/MacOSX$(SDK_VERSION).sdk
+    mkdir -p "$apple_sdk_root"
+    echo "Extracting MacOSX$(SDK_VERSION).tar.xz (this may take a while)"
+    tar --extract --file=${WORKSPACE}/srcdir/MacOSX$(SDK_VERSION).tar.xz --directory="$apple_sdk_root" --strip-components=1 --warning=no-unknown-keyword MacOSX$(SDK_VERSION).sdk/System MacOSX$(SDK_VERSION).sdk/usr
+    sed -i "s!/opt/$target/$target/sys-root!$apple_sdk_root!" $CMAKE_TARGET_TOOLCHAIN
+    sed -i "s!/opt/$target/$target/sys-root!$apple_sdk_root!" /opt/bin/$bb_full_target/$target-clang++
+    export MACOSX_DEPLOYMENT_TARGET=$(SDK_VERSION)
+
+    ### OSRM-backend Patching
+    # Exclude duplicate intersection files from GUIDANCE for platforms that link to EXTRACTOR
+    sed -i 's|file(GLOB GuidanceGlob src/guidance/\*\.cpp src/extractor/intersection/\*\.cpp)|file(GLOB GuidanceGlob src/guidance/*.cpp)|' CMakeLists.txt
+    # Replace the osrm_guidance library definition with version that links to EXTRACTOR
+    sed -i '/^add_library(osrm_guidance $<TARGET_OBJECTS:GUIDANCE> $<TARGET_OBJECTS:UTIL>)$/c\
+add_library(osrm_guidance $<TARGET_OBJECTS:GUIDANCE> $<TARGET_OBJECTS:UTIL> $<TARGET_OBJECTS:MICROTAR>)\
+target_link_libraries(osrm_guidance PRIVATE EXTRACTOR ${LUA_LIBRARIES} BZip2::BZip2 ZLIB::ZLIB EXPAT::EXPAT Boost::iostreams TBB::tbb)' CMakeLists.txt
+
+    ### CMake flags
     CMAKE_FLAGS+=(
         -DENABLE_LTO=OFF
         -DCMAKE_EXE_LINKER_FLAGS="-L${libdir} -ltbb -lz"
@@ -78,12 +73,30 @@ if [[ "${target}" == *-apple-darwin* ]]; then
         -DTBB_DIR=${libdir}/cmake/TBB
         -DLUA_LIBRARIES="${libdir}/liblua.dylib"
         -DLUA_INCLUDE_DIR="${includedir}"
+        -DOSRM_HAS_STD_FORMAT_EXITCODE=0
+        -DOSRM_HAS_STD_FORMAT_EXITCODE__TRYRUN_OUTPUT=""
     )
 fi
 
-# Windows specific cmake flags
+# Windows specific handling
 if [[ "${target}" == *-mingw* ]]; then
-    # Common flags with -fno-lto consolidated
+    ### OSRM-backend Patching
+    # Ensure console executables by stripping WIN32 from add_executable invocations
+    find . -name "CMakeLists.txt" -o -name "*.cmake" | while read f; do
+        sed -i '/add_executable(/,/)/{s/ WIN32//g;}' "$f"
+        sed -i 's/add_executable(\([^ ]*\) WIN32 /add_executable(\1 /g' "$f"
+        sed -i 's/add_executable(\([^ ]*\) WIN32)/add_executable(\1)/g' "$f"
+    done
+    # Remove rpath flag for Windows
+    sed -i '/set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,origin")/d' CMakeLists.txt
+    # Exclude duplicate intersection files from GUIDANCE for platforms that link to EXTRACTOR
+    sed -i 's|file(GLOB GuidanceGlob src/guidance/\*\.cpp src/extractor/intersection/\*\.cpp)|file(GLOB GuidanceGlob src/guidance/*.cpp)|' CMakeLists.txt
+    # Replace the osrm_guidance library definition with version that links to EXTRACTOR
+    sed -i '/^add_library(osrm_guidance $<TARGET_OBJECTS:GUIDANCE> $<TARGET_OBJECTS:UTIL>)$/c\
+add_library(osrm_guidance $<TARGET_OBJECTS:GUIDANCE> $<TARGET_OBJECTS:UTIL> $<TARGET_OBJECTS:MICROTAR>)\
+target_link_libraries(osrm_guidance PRIVATE EXTRACTOR ${LUA_LIBRARIES} BZip2::BZip2 ZLIB::ZLIB EXPAT::EXPAT Boost::iostreams TBB::tbb)' CMakeLists.txt
+
+    ### CMake flags
     LTO_FLAGS="-fno-lto"
     CMAKE_FLAGS+=(
         -DENABLE_LTO=OFF
@@ -104,18 +117,7 @@ if [[ "${target}" == *-mingw* ]]; then
     )
 fi
 
-# Linux specific cmake flags
-if [[ "${target}" == *-linux-* ]]; then
-    CMAKE_FLAGS+=(-DCMAKE_CXX_FLAGS="-Wno-array-bounds -Wno-uninitialized -Wno-error")
-fi
-
-# Linux-musl specific cmake flags
-if [[ "${target}" == *-linux-musl* ]]; then
-    CMAKE_FLAGS+=(
-        -DOSRM_HAS_STD_FORMAT_EXITCODE=0
-        -DOSRM_HAS_STD_FORMAT_EXITCODE__TRYRUN_OUTPUT=""
-    )
-fi
+mkdir build && cd build
 
 cmake .. "${CMAKE_FLAGS[@]}"
 
@@ -127,7 +129,7 @@ install_license "${WORKSPACE}/srcdir/osrm-backend/LICENSE.TXT"
 """
 
 platforms = supported_platforms()
-platforms = filter(p -> Sys.iswindows(p) || Sys.isapple(p) || Sys.islinux(p), platforms)
+platforms = filter(p -> Sys.islinux(p) || Sys.isapple(p) || Sys.iswindows(p), platforms)
 platforms = expand_cxxstring_abis(platforms)
 
 # The products that we will ensure are always built
