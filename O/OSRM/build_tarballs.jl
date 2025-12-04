@@ -102,9 +102,8 @@ target_link_libraries(osrm_guidance PRIVATE EXTRACTOR ${LUA_LIBRARIES} BZip2::BZ
         -DENABLE_LTO=OFF
         -DCMAKE_CXX_FLAGS="-Wno-array-bounds -Wno-uninitialized -Wno-unused-parameter -Wno-maybe-uninitialized ${LTO_FLAGS} -Wno-error -Wno-pedantic"
         -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG ${LTO_FLAGS}"
-        -DCMAKE_EXE_LINKER_FLAGS="${LTO_FLAGS} -Wl,-subsystem,console -Wl,--entry=mainCRTStartup -L${libdir} -ltbb12 -lz"
-        -DCMAKE_SHARED_LINKER_FLAGS="${LTO_FLAGS} -L${libdir} -ltbb12 -lz"
-        -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=ON
+        -DCMAKE_EXE_LINKER_FLAGS="${LTO_FLAGS} -Wl,-subsystem,console -L${libdir} -ltbb12 -lz"
+        -DCMAKE_SHARED_LINKER_FLAGS="${LTO_FLAGS} -Wl,--export-all-symbols -L${libdir} -ltbb12 -lz"
         -DCMAKE_CXX_VISIBILITY_PRESET=default
         -DCMAKE_VISIBILITY_INLINES_HIDDEN=OFF
         -DCMAKE_SKIP_RPATH=ON
@@ -123,6 +122,24 @@ cmake .. "${CMAKE_FLAGS[@]}"
 
 cmake --build . --parallel ${nproc}
 cmake --install .
+
+# Windows: Regenerate import library with proper symbols
+if [[ "${target}" == *-mingw* ]]; then
+    if [ -f ${prefix}/bin/libosrm.dll ] && [ -f ${prefix}/lib/libosrm.dll.a ]; then
+        cd ${prefix}/lib
+        # Extract exported symbols from DLL - nm -D shows dynamically exported symbols
+        nm -D ${prefix}/bin/libosrm.dll 2>/dev/null | awk '/^[0-9a-fA-F]+ [Tt] / {print $3}' > /tmp/libosrm.def
+        if [ -s /tmp/libosrm.def ]; then
+            # Create proper .def file format with EXPORTS header
+            echo "EXPORTS" > /tmp/libosrm.def.tmp
+            cat /tmp/libosrm.def >> /tmp/libosrm.def.tmp
+            mv /tmp/libosrm.def.tmp /tmp/libosrm.def
+            # Regenerate import library from .def file
+            dlltool -d /tmp/libosrm.def -l libosrm.dll.a -D ${prefix}/bin/libosrm.dll
+            rm -f /tmp/libosrm.def
+        fi
+    fi
+fi
 
 cp -r ${WORKSPACE}/srcdir/osrm-backend/profiles ${prefix}/
 install_license "${WORKSPACE}/srcdir/osrm-backend/LICENSE.TXT"
