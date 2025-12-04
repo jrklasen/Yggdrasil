@@ -4,7 +4,7 @@ name = "libosrmc"
 version = v"6.0.0"
 
 sources = [
-    DirectorySource("/home/jrklasen/dev/moviro/osrm/libosrmc"),
+    GitSource("https://github.com/moviro-hub/libosrmc.git", "8ba3109261c1d30b06b1ef7f9741eb04fcc3aad7"),
 ]
 
 script = raw"""
@@ -27,7 +27,8 @@ make install PREFIX=${prefix}
 """
 
 platforms = supported_platforms()
-platforms = filter(p -> (Sys.iswindows(p) && arch(p) != "i686") || Sys.islinux(p) || (Sys.isapple(p) && arch(p) == "aarch64"), platforms)  # Windows (x86_64 only), Linux, macOS (ARM only)
+# Linux, macOS (ARM only), Windows
+platforms = filter(p -> Sys.islinux(p) || Sys.isapple(p) && arch(p) == "aarch64" || Sys.iswindows(p), platforms)
 platforms = expand_cxxstring_abis(platforms)
 
 products = [
@@ -37,6 +38,7 @@ products = [
 
 dependencies = [
     Dependency("CompilerSupportLibraries_jll"),
+    # TODO: change to OSRM_jll.jl once released
     Dependency(PackageSpec(name="OSRM_jll", url="https://github.com/jrklasen/OSRM_jll.jl", rev="main")),
     Dependency("boost_jll"; compat="=1.87.0"),
     Dependency("Expat_jll"; compat="2.6.5"),
